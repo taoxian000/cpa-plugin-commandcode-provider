@@ -138,7 +138,7 @@ http(s)://<你的 CPA 地址>/v0/resource/plugins/commandcode-provider/quota
 ## 常见问题
 
 **页面提示「读取插件配置失败（HTTP 401）」**
-没登录管理面板，或页面和面板不在同一个域名/端口（页面要用 localStorage 的 `cli-proxy-auth`）。
+没登录管理面板，或页面和面板不在同一个域名/端口（页面要用 localStorage 的 `cli-proxy-auth`）。CLIProxyAPI v8 管理界面只有在登录时**勾选「记住密码」**才会把管理密钥写入 `cli-proxy-auth`（`enc::v2::` 格式，XOR 密钥为 `salt|host`，不再含 UA），否则本页读不到密钥：请登出后勾选「记住密码」重新登录，再刷新本页。
 
 **请求 503 `auth_not_found: no auth available (providers=commandcode …)`**
 没有 commandcode 的认证记录。用页面「导入密钥并保存设置」，或在 `auths/` 放 `{"type":"commandcode","api_key":"user_..."}`。

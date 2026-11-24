@@ -121,23 +121,43 @@ function when(s) { return s ? new Date(s).toLocaleString() : ''; }
 function $(id) { return document.getElementById(id); }
 function tierName(w) { return TIER[w] || '未标注'; }
 
-function authHeader() {
-  var h = { 'Content-Type': 'application/json' };
+function deobfuscate(raw) {
+  // CLIProxyAPI WebUI: v2 = XOR(salt|host), legacy v1 = XOR(salt|host|userAgent).
+  var v2 = raw.indexOf('enc::v2::') === 0, v1 = raw.indexOf('enc::v1::') === 0;
+  if (!v2 && !v1) return raw;
+  var b = atob(raw.slice(9));
+  var seed = 'cli-proxy-api-webui::secure-storage|' + location.host + (v1 ? '|' + navigator.userAgent : '');
+  var seedBytes = new TextEncoder().encode(seed);
+  var bytes = new Uint8Array(b.length);
+  for (var i = 0; i < b.length; i++) bytes[i] = b.charCodeAt(i) ^ seedBytes[i % seedBytes.length];
+  return new TextDecoder().decode(bytes);
+}
+
+function readManagementKey() {
   try {
     var raw = localStorage.getItem('cli-proxy-auth');
     if (raw) {
-      var decoded = raw;
-      if (raw.indexOf('enc::v1::') === 0) {
-        var b = atob(raw.slice(9));
-        var seed = 'cli-proxy-api-webui::secure-storage|' + location.host + '|' + navigator.userAgent;
-        var out = '';
-        for (var i = 0; i < b.length; i++) out += String.fromCharCode(b.charCodeAt(i) ^ seed.charCodeAt(i % seed.length));
-        decoded = out;
-      }
-      var parsed = JSON.parse(decoded);
-      if (parsed && parsed.state && parsed.state.managementKey) h['Authorization'] = 'Bearer ' + parsed.state.managementKey;
+      var parsed = JSON.parse(deobfuscate(raw));
+      var st = parsed && (parsed.state || parsed);
+      if (st && st.managementKey) return st.managementKey;
     }
   } catch (e) {}
+  try {
+    // Older WebUI builds stored the key under its own entry.
+    var legacy = localStorage.getItem('managementKey');
+    if (legacy) {
+      var k = deobfuscate(legacy);
+      try { k = JSON.parse(k); } catch (e) {}
+      if (k && typeof k === 'string') return k;
+    }
+  } catch (e) {}
+  return '';
+}
+
+function authHeader() {
+  var h = { 'Content-Type': 'application/json' };
+  var key = readManagementKey();
+  if (key) h['Authorization'] = 'Bearer ' + key;
   return h;
 }
 
@@ -147,7 +167,7 @@ function pluginPost(name, body) {
 }
 function getConfig() {
   return fetch('/v0/management/plugins/' + PREFIX + '/config', { method: 'GET', headers: authHeader() })
-    .then(function (res) { if (!res.ok) throw new Error('读取插件配置失败（HTTP ' + res.status + '），请先在管理界面登录'); return res.json(); });
+    .then(function (res) { if (!res.ok) throw new Error('读取插件配置失败（HTTP ' + res.status + '），请先在管理界面登录；v8 仅在登录时勾选「记住密码」才会保存密钥供本页读取'); return res.json(); });
 }
 function patchConfig(patch) {
   return fetch('/v0/management/plugins/' + PREFIX + '/config', { method: 'PATCH', headers: authHeader(), body: JSON.stringify(patch) })
